@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "awvoice"
+version = "0.1.0"
+description = "Turn speech into text and text into speech, on a service you host."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+awvoice = "awvoice.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Aitherium/awvoice"
+Documentation = "https://github.com/Aitherium/awvoice#readme"
+Repository = "https://github.com/Aitherium/awvoice.git"
+Issues = "https://github.com/Aitherium/awvoice/issues"
+
+[tool.setuptools]
+packages = ["awvoice"]

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1",
+  "name": "awvoice",
+  "description": "Hear and speak — transcribe audio, synthesize a voice.",
+  "url": "https://aitherium.github.io/awvoice/",
+  "repository": "https://github.com/Aitherium/awvoice",
+  "kind": "tool",
+  "status": "planned",
+  "adopt": "Turn speech into text and text into speech, on a service you host.",
+  "pairs_with": [
+    "awdk",
+    "awbrowse",
+    "awrelay"
+  ],
+  "includes": [],
+  "speaks_to": "any voice-shaped service"
+}
