@@ -252,3 +252,82 @@ class TestFailClosed:
         client = VoiceClient(tts_url="http://tts.example.com")
         with pytest.raises(ValueError):
             client.synthesize("")
+
+
+class TestDeskSay:
+    """`awvoice say` -- the desk avatar owns playback; awvoice only asks."""
+
+    def test_payload_trims_caps_and_carries_voice(self):
+        from awvoice.desk import MAX_CHARS, speak_payload
+
+        assert speak_payload("  hello  ") == {"text": "hello"}
+        assert speak_payload("hi", "nova") == {"text": "hi", "voice": "nova"}
+        assert len(speak_payload("x" * (MAX_CHARS + 50))["text"]) == MAX_CHARS
+
+    def test_payload_carries_and_bounds_speed(self):
+        from awvoice.desk import speak_payload
+
+        assert speak_payload("hi", speed=1.5) == {"text": "hi", "speed": 1.5}
+        with pytest.raises(ValueError):
+            speak_payload("hi", speed=9)
+
+    def test_payload_refuses_silence(self):
+        from awvoice.desk import speak_payload
+
+        with pytest.raises(ValueError):
+            speak_payload("   ")
+
+    def test_desk_url_env_override(self):
+        from awvoice.desk import DEFAULT_DESK_URL, desk_url
+
+        assert desk_url({}) == DEFAULT_DESK_URL
+        assert desk_url({"AWVOICE_DESK_URL": "http://127.0.0.1:5/"}) == "http://127.0.0.1:5"
+
+    def test_say_posts_to_speak_and_returns_verdict(self):
+        from awvoice.desk import say
+
+        seen = {}
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"ok": true, "chars": 5, "windows": 1}'
+
+        def opener(req, timeout):
+            seen["url"] = req.full_url
+            seen["body"] = json.loads(req.data.decode("utf-8"))
+            return _Resp()
+
+        verdict = say("hello", "nova", base_url="http://127.0.0.1:1", opener=opener)
+        assert seen["url"] == "http://127.0.0.1:1/speak"
+        assert seen["body"] == {"text": "hello", "voice": "nova"}
+        assert verdict["ok"] is True
+
+    def test_say_raises_when_desk_is_down_or_silent(self):
+        import urllib.error
+
+        from awvoice.desk import DeskUnavailableError, say
+
+        def down(req, timeout):
+            raise urllib.error.URLError("refused")
+
+        with pytest.raises(DeskUnavailableError):
+            say("hello", base_url="http://127.0.0.1:1", opener=down)
+
+        class _Silent:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"ok": false, "reason": "voice service unavailable"}'
+
+        with pytest.raises(DeskUnavailableError):
+            say("hello", base_url="http://127.0.0.1:1", opener=lambda r, timeout: _Silent())

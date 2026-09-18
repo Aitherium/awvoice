@@ -68,6 +68,17 @@ def main(argv: list[str] | None = None) -> int:
         "-o", "--output", required=True, help="Output audio file path"
     )
 
+    # say subcommand: the desk avatar says it (awdesk owns playback + lip-sync)
+    say_cmd = sub.add_parser(
+        "say", help="Have the desk avatar say it aloud (via the local awdesk bridge)"
+    )
+    say_cmd.add_argument("text", help="What to say")
+    say_cmd.add_argument("--voice", help="Voice name (service default when omitted)")
+    say_cmd.add_argument("--speed", type=float, help="Playback rate 0.25-4.0 (desk default 1.35)")
+    say_cmd.add_argument(
+        "--desk-url", help="awdesk bridge (or set AWVOICE_DESK_URL; default 127.0.0.1:47931)"
+    )
+
     args = ap.parse_args(argv)
 
     # Handle self-test
@@ -78,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.cmd:
         ap.print_help()
         return 0
+
+    if args.cmd == "say":
+        return _say(args.text, args.voice, args.desk_url, args.speed)
 
     # Create client
     client = VoiceClient(stt_url=args.stt_url, tts_url=args.tts_url)
@@ -124,6 +138,23 @@ def _synthesize(client: VoiceClient, text: str, output: str) -> int:
     except ValueError as exc:
         print(f"Invalid input: {exc}", file=sys.stderr)
         return 2
+
+
+def _say(text: str, voice: str | None, desk_url: str | None,
+         speed: float | None = None) -> int:
+    """The desk avatar says the line. Exit 0 spoken, 1 desk unavailable, 2 bad input."""
+    from .desk import DeskUnavailableError, say
+
+    try:
+        verdict = say(text, voice, speed=speed, base_url=desk_url)
+    except ValueError as exc:
+        print(f"Invalid input: {exc}", file=sys.stderr)
+        return 2
+    except DeskUnavailableError as exc:
+        print(f"Desk error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Spoken on the desk ({verdict.get('chars', len(text))} chars).")
+    return 0
 
 
 def _run_self_tests() -> int:
