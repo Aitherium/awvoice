@@ -10,20 +10,17 @@
   "pairs_with": [
     "awdk",
     "awbrowse",
-    "awrelay",
-    "awdesk",
-    "awask",
-    "awsh"
+    "awrelay"
   ],
   "includes": [],
   "metrics": {
     "files": {
-      "value": 19,
-      "as_of": "2026-09-18T17:06:06-07:00"
+      "value": 15,
+      "as_of": "2026-09-12T08:36:19-07:00"
     },
     "tests": {
       "value": 1,
-      "as_of": "2026-09-18T17:06:06-07:00"
+      "as_of": "2026-09-12T08:36:19-07:00"
     }
   }
 }
