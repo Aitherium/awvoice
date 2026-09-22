@@ -10,6 +10,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -79,6 +80,20 @@ def main(argv: list[str] | None = None) -> int:
         "--desk-url", help="awdesk bridge (or set AWVOICE_DESK_URL; default 127.0.0.1:47931)"
     )
 
+    # listen subcommand: THIS machine's microphone, not a file somebody already recorded.
+    listen_cmd = sub.add_parser(
+        "listen", help="Record from the microphone and print what was heard"
+    )
+    listen_cmd.add_argument("--seconds", type=float, default=6.0,
+                            help="How long to record (default 6)")
+    listen_cmd.add_argument("--steer", default="",
+                            help="Send the transcript to this session as the OWNER speaking "
+                                 "(a session id, or a prefix of one)")
+    listen_cmd.add_argument("--surface", default="awsh",
+                            help="Who is holding the microphone, for the lease (default awsh)")
+    listen_cmd.add_argument("--json", action="store_true", dest="as_json",
+                            help="Machine-readable result")
+
     args = ap.parse_args(argv)
 
     # Handle self-test
@@ -92,6 +107,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "say":
         return _say(args.text, args.voice, args.desk_url, args.speed)
+
+    if args.cmd == "listen":
+        return _listen(args.seconds, args.steer, args.surface, args.as_json)
 
     # Create client
     client = VoiceClient(stt_url=args.stt_url, tts_url=args.tts_url)
@@ -111,6 +129,40 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 3
+
+
+def _listen(seconds: float, steer: str, surface: str, as_json: bool) -> int:
+    """Hold the mic, record, transcribe, optionally steer one session.
+
+    Exit codes follow this CLI's contract: 1 the service refused or was unreachable, 2 there
+    is no capture stack or another surface holds the microphone (both are things the CALLER
+    must change), 3 anything else. Silence exits 0 with an empty transcript -- "I heard
+    nothing" is a true answer, and turning it into an error would make a quiet room a fault.
+    """
+    from .listen import MicBusyError, listen_once
+
+    try:
+        result = listen_once(seconds, surface=surface, steer=steer)
+    except MicBusyError as exc:
+        print(f"awvoice: {exc}", file=sys.stderr)
+        return 2
+    except RuntimeError as exc:          # no capture stack -- the message names the fix
+        print(f"awvoice: {exc}", file=sys.stderr)
+        return 2
+    except Exception as exc:  # noqa: BLE001
+        print(f"awvoice: could not listen: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    if as_json:
+        print(json.dumps(result))
+        return 0
+    if not result["heard"]:
+        print("(heard nothing)")
+        return 0
+    print(result["heard"])
+    if result["steered"]:
+        print(f"-- steered to {result['steered']} (seq {result['seq']})", file=sys.stderr)
+    return 0
 
 
 def _transcribe(client: VoiceClient, audio_path: str, output: str | None) -> int:

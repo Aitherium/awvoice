@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "awvoice"
-version = "0.1.1"
+version = "0.2.0"
 description = "Turn speech into text and text into speech, on a service you host."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,9 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+# The ear is OPTIONAL: a headless box that will never listen should not carry
+# PortAudio. `awvoice listen` says exactly this when the import fails.
+mic = ["sounddevice>=0.4"]
 
 [project.scripts]
 awvoice = "awvoice.cli:main"

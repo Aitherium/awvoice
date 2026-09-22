@@ -40,6 +40,28 @@ awvoice transcribe voice.wav -o output.txt
 awvoice synthesize "Hello, world!" -o output.wav
 ```
 
+## Listening (the microphone on THIS machine)
+
+```bash
+pip install 'awvoice[mic]'          # PortAudio; optional, a headless box needs none
+
+awvoice listen                      # record 6s, print what was heard
+awvoice listen --seconds 3 --json   # machine-readable
+awvoice listen --steer 04e05757     # send it to that session AS THE OWNER SPEAKING
+```
+
+`--steer` publishes the transcript into the room as a `human` actor, which is the one actor
+a running session will accept straight into its keyboard; anything else is queued for its
+next turn. That is the difference between talking to an agent and leaving it a note.
+
+Two rules worth knowing before you wire a surface to it:
+
+- **One microphone, one holder.** `~/.aither/mic.lock` names its holder, so a second surface
+  is told *who* has the mic instead of failing oddly. A lease whose process died is stale and
+  may be taken — a crashed capture never mutes the machine permanently.
+- **Nothing is retained.** The recording exists only for the length of the transcription call.
+  There is no keep flag, and no audio reaches the room — only the words.
+
 ## How it works
 
 `awvoice` is a client library for speech-to-text (STT) and text-to-speech (TTS) services that **you host and control**.

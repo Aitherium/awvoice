@@ -19,5 +19,5 @@ the endpoints, or pass them to VoiceClient.__init__.
 
 from .client import ServiceConfigError, ServiceError, VoiceClient
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["VoiceClient", "ServiceConfigError", "ServiceError"]
