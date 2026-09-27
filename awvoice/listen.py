@@ -34,6 +34,7 @@ import ssl
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import uuid
 import wave
@@ -43,6 +44,9 @@ from typing import Any, Callable, Optional
 LOCK_PATH = Path.home() / ".aither" / "mic.lock"
 DEFAULT_VOICE_URL = os.environ.get("AWVOICE_URL", "https://127.0.0.1:8084")
 DEFAULT_HARNESS_URL = os.environ.get("AITHER_HARNESS_URL", "http://127.0.0.1:8362")
+# The host STT shim (AitherOS/dev/tools/desk_stt_shim.py, faster-whisper on CPU) serves the
+# same /voice/transcribe contract on plain http. Dialled only when the fleet voice is unreachable.
+FALLBACK_STT_URL = os.environ.get("AWVOICE_STT_FALLBACK_URL", "http://127.0.0.1:8195")
 HARNESS_TOKEN = Path.home() / ".aither" / "harness_token"
 
 SAMPLE_RATE = 16000          # what local_whisper wants; resampling upstream is wasted work
@@ -204,6 +208,24 @@ def transcribe(wav: bytes, base_url: str = DEFAULT_VOICE_URL, timeout: float = 6
     return ""
 
 
+def transcribe_with_fallback(wav: bytes, primary: str = DEFAULT_VOICE_URL,
+                             fallback: str = FALLBACK_STT_URL, transcribe_fn=None) -> str:
+    """The fleet voice first; the host shim when the fleet one cannot be REACHED.
+
+    Only a connection-level failure falls through. An HTTP error from a service that answered
+    is its verdict and is raised, not papered over by asking somebody else.
+    """
+    fn = transcribe_fn or transcribe
+    try:
+        return fn(wav, primary)
+    except urllib.error.HTTPError:
+        raise
+    except (urllib.error.URLError, OSError):
+        if not fallback or fallback.rstrip("/") == primary.rstrip("/"):
+            raise
+        return fn(wav, fallback)
+
+
 # ── somewhere that acts on it ───────────────────────────────────────────────
 
 def steer_event(target: str, text: str, room: str = "main") -> dict:
@@ -255,7 +277,7 @@ def listen_once(seconds: float = DEFAULT_SECONDS, *, surface: str = "awsh",
     on retention. Both service calls are injectable so the rules above are tested without a
     microphone and without the fleet.
     """
-    transcribe_fn = transcribe_fn or (lambda wav: transcribe(wav))
+    transcribe_fn = transcribe_fn or transcribe_with_fallback
     publish_fn = publish_fn or publish
     out: dict = {"heard": "", "steered": "", "seq": 0, "surface": surface}
     with MicLease(surface, lock_path):

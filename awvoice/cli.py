@@ -80,6 +80,13 @@ def main(argv: list[str] | None = None) -> int:
         "--desk-url", help="awdesk bridge (or set AWVOICE_DESK_URL; default 127.0.0.1:47931)"
     )
 
+    # reply subcommand: the Claude Code Stop hook -- speak the agent's final reply on the desk
+    sub.add_parser(
+        "reply",
+        help="Stop-hook entrypoint: read the hook JSON on stdin and speak the reply "
+             "(opt-in AITHER_SPEAK_REPLIES=1; always exits 0)",
+    )
+
     # listen subcommand: THIS machine's microphone, not a file somebody already recorded.
     listen_cmd = sub.add_parser(
         "listen", help="Record from the microphone and print what was heard"
@@ -107,6 +114,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "say":
         return _say(args.text, args.voice, args.desk_url, args.speed)
+
+    if args.cmd == "reply":
+        from .reply import main as _reply_main
+        return _reply_main()
 
     if args.cmd == "listen":
         return _listen(args.seconds, args.steer, args.surface, args.as_json)
