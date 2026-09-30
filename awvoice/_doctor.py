@@ -33,7 +33,7 @@ PAIRS_WITH = ['awask', 'awbrowse', 'awdeck', 'adk', 'awrelay']
 #: platform-wide vars it also touches would be noise, and a doctor that floods
 #: gets ignored.
 ENV_REQUIRED = []
-ENV_OPTIONAL = ['AWVOICE_DESK_URL', 'AWVOICE_STT_URL', 'AWVOICE_TTS_URL']
+ENV_OPTIONAL = ['AWVOICE_DESK_URL', 'AWVOICE_STT_FALLBACK_URL', 'AWVOICE_STT_URL', 'AWVOICE_TTS_URL', 'AWVOICE_URL']
 
 
 def _installed(mod: str) -> "str | None":
