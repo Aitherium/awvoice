@@ -14,6 +14,21 @@ Turn speech into text and text into speech, on a service you host.
 
 ```bash
 pip install awvoice
+pip install "awvoice[local]"    # the Aither voice on this machine, no service
+awvoice say --voice local:aither "Welcome to Aitherium."    # -> awvoice-say.wav
+```
+
+## The Aither voice, on this machine
+
+`local:aither` is a Piper/VITS en-US voice (MIT) that runs with onnxruntime and espeak-ng.
+The first use downloads it once (63 MB plus a 7 KB config), checks both files against
+pinned sha256 digests, and keeps them in the shared local model directory
+(`$AITHER_VOICE_DIR` overrides it); after that it needs no network, no account and no
+service. `adk home voice --say "..."` reads the same files.
+
+```python
+from awvoice import VoiceClient
+wav = VoiceClient().synthesize("Hello.", voice="local:aither")
 ```
 
 ```python

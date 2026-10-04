@@ -70,11 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     synthesize_cmd.add_argument(
         "--voice",
-        help="custom:<name> speaks in your workspace's custom voice (see `awvoice voices`); "
-             "omit for the AWVOICE_TTS_URL service",
+        help="local:aither speaks on this machine with no service; custom:<name> speaks "
+             "in your workspace's custom voice (see `awvoice voices`); omit for the "
+             "AWVOICE_TTS_URL service",
     )
     synthesize_cmd.add_argument(
-        "--speed", type=float, help="Custom voices only: 0.5-2.0 (default 1.0)"
+        "--speed", type=float, help="Local and custom voices only: 0.5-2.0 (default 1.0)"
     )
 
     # voices subcommand: the custom voices your workspace built
@@ -91,8 +92,13 @@ def main(argv: list[str] | None = None) -> int:
     say_cmd.add_argument("text", help="What to say")
     say_cmd.add_argument(
         "--voice",
-        help="Voice name, passed to the desk as-is (service default when omitted); "
-             "custom:<name> is resolved by the desk",
+        help="local:aither synthesizes on THIS machine and writes a wav (no desk, no "
+             "service); any other name is passed to the desk as-is (custom:<name> is "
+             "resolved by the desk)",
+    )
+    say_cmd.add_argument(
+        "-o", "--output", default="awvoice-say.wav",
+        help="With a local: voice, where the wav is written (default awvoice-say.wav)",
     )
     say_cmd.add_argument("--speed", type=float, help="Playback rate 0.25-4.0 (desk default 1.35)")
     say_cmd.add_argument(
@@ -132,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "say":
+        from .local import split_local
+        if split_local(args.voice):
+            return _say_local(args.text, args.voice, args.output, args.speed)
         return _say(args.text, args.voice, args.desk_url, args.speed)
 
     if args.cmd == "reply":
@@ -241,16 +250,17 @@ def _synthesize(client: VoiceClient, text: str, output: str,
                 voice: str | None = None, speed: float | None = None) -> int:
     """Synthesize speech from text."""
     from .genesis import split_voice
+    from .local import split_local
 
-    # --voice/--speed only reach a custom voice; the stock service takes neither,
-    # so refuse them rather than silently synthesize in a voice nobody asked for.
-    if voice is not None and not split_voice(voice):
-        print(f"Invalid input: --voice takes custom:<name> (got {voice!r}); omit it for "
-              "the AWVOICE_TTS_URL service's own voice", file=sys.stderr)
+    # --voice/--speed only reach a local or custom voice; the stock service takes
+    # neither, so refuse them rather than silently synthesize in a voice nobody asked for.
+    if voice is not None and not (split_voice(voice) or split_local(voice)):
+        print(f"Invalid input: --voice takes local:aither or custom:<name> (got {voice!r}); "
+              "omit it for the AWVOICE_TTS_URL service's own voice", file=sys.stderr)
         return 2
     if speed is not None and voice is None:
-        print("Invalid input: --speed applies to custom voices only (add --voice custom:<name>)",
-              file=sys.stderr)
+        print("Invalid input: --speed applies to local and custom voices only (add --voice "
+              "local:aither or custom:<name>)", file=sys.stderr)
         return 2
     try:
         audio = client.synthesize(text, voice=voice, speed=speed)
@@ -260,6 +270,27 @@ def _synthesize(client: VoiceClient, text: str, output: str,
     except ValueError as exc:
         print(f"Invalid input: {exc}", file=sys.stderr)
         return 2
+
+
+def _say_local(text: str, voice: str, output: str, speed: float | None = None) -> int:
+    """Synthesize on this machine into ``output``. 0 written, 1 fetch/speak failed,
+    2 bad input or the local runtime is not installed (the message names the fix)."""
+    from .local import say_local, split_local
+
+    try:
+        audio = say_local(split_local(voice) or "", text, speed=speed)
+    except ValueError as exc:
+        print(f"Invalid input: {exc}", file=sys.stderr)
+        return 2
+    except ServiceConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
+    except ServiceError as exc:
+        print(f"Voice error: {exc}", file=sys.stderr)
+        return 1
+    Path(output).write_bytes(audio)
+    print(f"Audio written to {output} ({voice}, on this machine)")
+    return 0
 
 
 def _say(text: str, voice: str | None, desk_url: str | None,
@@ -327,6 +358,11 @@ def _run_self_tests() -> int:
         if not file_not_found_raised:
             print("FAIL: Should have raised FileNotFoundError")
             return 1
+
+        # Test 6: local voice ids are recognised without touching the network
+        from .local import split_local
+        assert split_local("local:aither") == "aither"
+        assert split_local("custom:aither") is None and split_local(None) is None
 
         print("All self-tests passed")
         return 0

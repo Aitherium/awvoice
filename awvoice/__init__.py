@@ -19,10 +19,15 @@ the endpoints, or pass them to VoiceClient.__init__.
 Custom voices your workspace built are ids of the form ``custom:<name>``:
 ``list_custom_voices()`` lists them and ``client.synthesize(text, voice="custom:x")``
 speaks through the Aitherium API (bearer from AITHER_API_KEY).
+
+``local:aither`` is the Aither voice on THIS machine: ``client.synthesize(text,
+voice="local:aither")`` fetches it once (sha256-pinned) and speaks with no service
+(``pip install "awvoice[local]"``).
 """
 
 from .client import ServiceConfigError, ServiceError, VoiceClient
 from .genesis import GenesisAuthError, list_custom_voices, say_custom
+from .local import say_local
 
 __version__ = "0.3.0"
 __all__ = [
@@ -32,4 +37,5 @@ __all__ = [
     "GenesisAuthError",
     "list_custom_voices",
     "say_custom",
+    "say_local",
 ]

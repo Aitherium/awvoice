@@ -82,10 +82,11 @@ class VoiceClient:
 
         Args:
             text: Text to convert to speech
-            voice: ``custom:<name>`` speaks through your workspace's custom voice
-                (see ``awvoice.genesis``). Any other value, or None, uses the
-                ``tts_url`` service unchanged.
-            speed: Custom voices only, 0.5-2.0.
+            voice: ``local:aither`` speaks on THIS machine with no service (see
+                ``awvoice.local``); ``custom:<name>`` speaks through your workspace's
+                custom voice (see ``awvoice.genesis``). Any other value, or None, uses
+                the ``tts_url`` service unchanged.
+            speed: Local and custom voices only, 0.5-2.0.
 
         Returns:
             Audio bytes (format depends on the service)
@@ -95,6 +96,11 @@ class VoiceClient:
             ServiceError: If the service call fails or returns an error
         """
         from .genesis import say_custom, split_voice
+        from .local import say_local, split_local
+
+        local = split_local(voice)
+        if local:
+            return say_local(local, text, speed=speed)
 
         custom = split_voice(voice)
         if custom:

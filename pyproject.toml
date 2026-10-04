@@ -16,6 +16,9 @@ dev = ["pytest>=7.0"]
 # The ear is OPTIONAL: a headless box that will never listen should not carry
 # PortAudio. `awvoice listen` says exactly this when the import fails.
 mic = ["sounddevice>=0.4"]
+# The Aither voice on THIS machine (`--voice local:aither`): onnxruntime + espeak-ng.
+# espeakng-loader is a py3-none wheel bundling libespeak-ng; no service, no account.
+local = ["onnxruntime>=1.17", "espeakng-loader>=0.2", "numpy>=1.24"]
 
 [project.scripts]
 awvoice = "awvoice.cli:main"
