@@ -68,13 +68,32 @@ def main(argv: list[str] | None = None) -> int:
     synthesize_cmd.add_argument(
         "-o", "--output", required=True, help="Output audio file path"
     )
+    synthesize_cmd.add_argument(
+        "--voice",
+        help="custom:<name> speaks in your workspace's custom voice (see `awvoice voices`); "
+             "omit for the AWVOICE_TTS_URL service",
+    )
+    synthesize_cmd.add_argument(
+        "--speed", type=float, help="Custom voices only: 0.5-2.0 (default 1.0)"
+    )
+
+    # voices subcommand: the custom voices your workspace built
+    voices_cmd = sub.add_parser(
+        "voices", help="List your workspace's custom voices (ids are custom:<name>)"
+    )
+    voices_cmd.add_argument("--json", action="store_true", dest="as_json",
+                            help="Machine-readable list")
 
     # say subcommand: the desk avatar says it (awdesk owns playback + lip-sync)
     say_cmd = sub.add_parser(
         "say", help="Have the desk avatar say it aloud (via the local awdesk bridge)"
     )
     say_cmd.add_argument("text", help="What to say")
-    say_cmd.add_argument("--voice", help="Voice name (service default when omitted)")
+    say_cmd.add_argument(
+        "--voice",
+        help="Voice name, passed to the desk as-is (service default when omitted); "
+             "custom:<name> is resolved by the desk",
+    )
     say_cmd.add_argument("--speed", type=float, help="Playback rate 0.25-4.0 (desk default 1.35)")
     say_cmd.add_argument(
         "--desk-url", help="awdesk bridge (or set AWVOICE_DESK_URL; default 127.0.0.1:47931)"
@@ -122,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "listen":
         return _listen(args.seconds, args.steer, args.surface, args.as_json)
 
+    if args.cmd == "voices":
+        return _voices(args.as_json)
+
     # Create client
     client = VoiceClient(stt_url=args.stt_url, tts_url=args.tts_url)
 
@@ -130,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cmd == "transcribe":
             return _transcribe(client, args.audio, args.output)
         elif args.cmd == "synthesize":
-            return _synthesize(client, args.text, args.output)
+            return _synthesize(client, args.text, args.output, args.voice, args.speed)
     except ServiceConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
@@ -191,10 +213,47 @@ def _transcribe(client: VoiceClient, audio_path: str, output: str | None) -> int
         return 2
 
 
-def _synthesize(client: VoiceClient, text: str, output: str) -> int:
-    """Synthesize speech from text."""
+def _voices(as_json: bool) -> int:
+    """List custom voices. An empty list is a normal answer and exits 0."""
+    from .genesis import list_custom_voices
+
     try:
-        audio = client.synthesize(text)
+        voices = list_custom_voices()
+    except ServiceConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
+    except ServiceError as exc:
+        print(f"Service error: {exc}", file=sys.stderr)
+        return 1
+    if as_json:
+        print(json.dumps({"voices": voices}))
+        return 0
+    if not voices:
+        print("(no custom voices yet)")
+        return 0
+    for v in voices:
+        extra = " ".join(str(x) for x in (v.get("reader"), v.get("language")) if x)
+        print(f"{v['id']}	{extra}".rstrip())
+    return 0
+
+
+def _synthesize(client: VoiceClient, text: str, output: str,
+                voice: str | None = None, speed: float | None = None) -> int:
+    """Synthesize speech from text."""
+    from .genesis import split_voice
+
+    # --voice/--speed only reach a custom voice; the stock service takes neither,
+    # so refuse them rather than silently synthesize in a voice nobody asked for.
+    if voice is not None and not split_voice(voice):
+        print(f"Invalid input: --voice takes custom:<name> (got {voice!r}); omit it for "
+              "the AWVOICE_TTS_URL service's own voice", file=sys.stderr)
+        return 2
+    if speed is not None and voice is None:
+        print("Invalid input: --speed applies to custom voices only (add --voice custom:<name>)",
+              file=sys.stderr)
+        return 2
+    try:
+        audio = client.synthesize(text, voice=voice, speed=speed)
         Path(output).write_bytes(audio)
         print(f"Audio written to {output}")
         return 0

@@ -15,9 +15,21 @@ Requires you to host STT and TTS services. Supports any HTTP endpoint that:
 
 Set AWVOICE_STT_URL and AWVOICE_TTS_URL environment variables to configure
 the endpoints, or pass them to VoiceClient.__init__.
+
+Custom voices your workspace built are ids of the form ``custom:<name>``:
+``list_custom_voices()`` lists them and ``client.synthesize(text, voice="custom:x")``
+speaks through the Aitherium API (bearer from AITHER_API_KEY).
 """
 
 from .client import ServiceConfigError, ServiceError, VoiceClient
+from .genesis import GenesisAuthError, list_custom_voices, say_custom
 
-__version__ = "0.2.0"
-__all__ = ["VoiceClient", "ServiceConfigError", "ServiceError"]
+__version__ = "0.3.0"
+__all__ = [
+    "VoiceClient",
+    "ServiceConfigError",
+    "ServiceError",
+    "GenesisAuthError",
+    "list_custom_voices",
+    "say_custom",
+]

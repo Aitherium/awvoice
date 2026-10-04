@@ -76,11 +76,16 @@ class VoiceClient:
 
         return self._call_service(self.stt_url, audio_data, is_text=False)
 
-    def synthesize(self, text: str) -> bytes:
+    def synthesize(self, text: str, voice: str | None = None,
+                   speed: float | None = None) -> bytes:
         """Convert text to speech.
 
         Args:
             text: Text to convert to speech
+            voice: ``custom:<name>`` speaks through your workspace's custom voice
+                (see ``awvoice.genesis``). Any other value, or None, uses the
+                ``tts_url`` service unchanged.
+            speed: Custom voices only, 0.5-2.0.
 
         Returns:
             Audio bytes (format depends on the service)
@@ -89,6 +94,12 @@ class VoiceClient:
             ServiceConfigError: If TTS endpoint is not configured
             ServiceError: If the service call fails or returns an error
         """
+        from .genesis import say_custom, split_voice
+
+        custom = split_voice(voice)
+        if custom:
+            return say_custom(custom, text, speed=speed)
+
         if not self.tts_url:
             raise ServiceConfigError(
                 "TTS endpoint not configured. Set AWVOICE_TTS_URL environment variable "
@@ -141,10 +152,8 @@ class VoiceClient:
                 # TTS returns raw audio bytes
                 return response_data
 
-        except urllib.error.URLError as exc:
-            raise ServiceError(
-                f"Cannot reach service at {url}: {exc.reason}"
-            ) from exc
+        # HTTPError subclasses URLError, so it must be caught FIRST -- otherwise
+        # every 4xx/5xx is misreported as "Cannot reach service".
         except urllib.error.HTTPError as exc:
             try:
                 error_msg = exc.read().decode("utf-8")
@@ -154,5 +163,11 @@ class VoiceClient:
             raise ServiceError(
                 f"Service error (HTTP {exc.code}): {error_msg}"
             ) from exc
+        except urllib.error.URLError as exc:
+            raise ServiceError(
+                f"Cannot reach service at {url}: {exc.reason}"
+            ) from exc
+        except ServiceError:
+            raise
         except Exception as exc:
             raise ServiceError(f"Unexpected error calling service: {exc}") from exc

@@ -120,6 +120,34 @@ except FileNotFoundError as e:
     print(f"File error: {e}")
 ```
 
+## Custom voices
+
+Voices your workspace built have ids of the form `custom:<name>`. They are spoken
+through the Aitherium API with your own key; stock voices keep using `AWVOICE_TTS_URL`.
+
+```bash
+export AITHER_API_KEY=...            # your Aitherium API key
+awvoice voices                       # "(no custom voices yet)" until one is built
+awvoice synthesize "Time for bed." --voice custom:grandma -o bed.wav
+```
+
+```python
+from awvoice import VoiceClient, list_custom_voices
+
+ids = [v["id"] for v in list_custom_voices()]          # [] is a normal answer
+wav = VoiceClient().synthesize("Hello", voice="custom:grandma", speed=1.0)
+```
+
+| variable | meaning |
+|---|---|
+| `AITHER_API_KEY` | bearer for custom voices (missing = configuration error, exit 2) |
+| `AWVOICE_GENESIS_URL` / `AITHER_GENESIS_URL` / `AITHER_API_URL` | Genesis API base, used as given |
+| `AITHER_PORTAL_URL` | your portal (as for adk); `/api/genesis` is appended. Default `https://api.aitherium.com` |
+
+Custom-voice `speed` is 0.5-2.0 and text is capped at 1000 characters. A 401/403 raises
+`GenesisAuthError` carrying the server's reason. `synthesize --voice` takes only `custom:<name>`. `awvoice say --voice custom:<name>` passes the id to the desk unchanged;
+the desk resolves it.
+
 ## Testing
 
 ```bash
