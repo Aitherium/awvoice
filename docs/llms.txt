@@ -1,0 +1,40 @@
+# awvoice
+
+> Hear and speak — transcribe audio, synthesize a voice.
+
+An agent that can only read text is deaf and mute. Every route to fixing that today is a vendor SDK that wants the audio uploaded, an API key, and a per-minute bill -- which rules it out for exactly the recordings people most want transcribed.
+
+## Install
+
+```
+pip install awvoice
+```
+
+## In Claude Code
+
+- hook: `awvoice reply` (on Stop)
+- skill: `/awvoice`
+
+## Use it in 30 seconds
+
+Turn speech into text and text into speech, on a service you host.
+
+## Composes with
+
+- [awdk](https://aitherium.github.io/awdk/) — Build AI agent fleets — 3 lines, any backend, local or cloud.
+- [awbrowse](https://aitherium.github.io/awbrowse/) — A portable browser client — navigate, console, network, DOM, screenshot.
+- [awrelay](https://aitherium.github.io/awrelay/) — Portable agent messaging — findings, alerts, coordination.
+- [awdesk](https://aitherium.github.io/awdesk/) — Aither World Desk -- the desktop body of AitherOS Online: tray, avatars, decision cards, the Living Desktop as an overlay.
+- [awask](https://aitherium.github.io/awask/) — Your agent asks you a question — and acts on your answer.
+- [awsh](https://aitherium.github.io/awsh/) — Your terminal answers you -- type a question where a command would go.
+- [awdeck](https://aitherium.github.io/awdeck/) — An outline becomes a narrated video -- and the file says which voice really spoke it.
+
+## Where it lives
+
+- Repo: https://github.com/Aitherium/awvoice
+- Docs: https://aitherium.github.io/awvoice/
+- Manifest (keys + the one-line adoption story): https://aitherium.github.io/awvoice/aither-manifest.json
+
+This repository is mirrored from the AitherOS monorepo by `.github/workflows/sync-awvoice.yml`; hand edits made here are overwritten on the next sync — change the source instead.
+
+Everything Aitherium, in one file for agents: https://aitherium.com/llms.txt
