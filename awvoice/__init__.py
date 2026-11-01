@@ -28,8 +28,16 @@ voice="local:aither")`` fetches it once (sha256-pinned) and speaks with no servi
 from .client import ServiceConfigError, ServiceError, VoiceClient
 from .genesis import GenesisAuthError, list_custom_voices, say_custom
 from .local import say_local
+from .loop import (
+    LoopConfig,
+    SpeechSegmenter,
+    VoiceLoop,
+    VoiceTurn,
+    loop_from_env,
+    wav_bytes,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     "VoiceClient",
     "ServiceConfigError",
@@ -38,4 +46,10 @@ __all__ = [
     "list_custom_voices",
     "say_custom",
     "say_local",
+    "VoiceLoop",
+    "VoiceTurn",
+    "LoopConfig",
+    "SpeechSegmenter",
+    "loop_from_env",
+    "wav_bytes",
 ]

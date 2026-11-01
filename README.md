@@ -55,6 +55,36 @@ awvoice transcribe voice.wav -o output.txt
 awvoice synthesize "Hello, world!" -o output.wav
 ```
 
+## The conversation loop (listen -> think -> speak)
+
+`awvoice.loop` is the shared component behind every voice surface: Discord voice,
+a browser microphone and the desk avatar all feed it PCM and play back what it
+returns. It owns end-pointing (energy VAD with pre-roll and a silence hangover),
+the turn (STT -> agent -> TTS) and the conversation history.
+
+```python
+from awvoice.loop import (HttpTranscriber, HttpSpeaker, OpenAICompatThinker,
+                          VoiceLoop)
+
+loop = VoiceLoop(
+    HttpTranscriber("https://voice.example/transcribe"),
+    OpenAICompatThinker("https://scheduler.example/v1", "my-model",
+                        priority="user"),          # a person is waiting
+    HttpSpeaker("https://voice.example/synthesize", voice="en-GB-SoniaNeural"))
+
+for turn in loop.feed(pcm_16khz_mono):             # end-points, then answers
+    play(turn.audio)                               # and keeps the history
+```
+
+Any of the three collaborators can be a plain callable (`CallableTranscriber`,
+`CallableThinker`, `CallableSpeaker`), which is how the tests run with no
+network. `loop_from_env()` builds the whole loop from `AWVOICE_STT_URL`,
+`AWVOICE_TTS_URL` and `AWVOICE_AGENT_URL`.
+
+The Discord transport lives in the `awdiscord` brick (`awdiscord.voice`); the
+integration plan for awconnect, awsh/awdk and awdesk is in the platform
+reference `awvoice-integration.md`.
+
 ## Listening (the microphone on THIS machine)
 
 ```bash
