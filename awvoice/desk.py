@@ -26,8 +26,21 @@ class DeskUnavailableError(RuntimeError):
 
 
 def desk_url(environment: dict[str, str] | None = None) -> str:
+    """AWVOICE_DESK_URL, else the port the desk launcher PERSISTED, else the constant.
+
+    The launcher picks a bindable port because Windows' reserved TCP ranges move
+    across reboots (2026-11-03: the pinned 47931 landed inside one and the desk
+    came up with a dead bridge). See AitherOS/lib/core/desk_bridge.py.
+    """
     env = os.environ if environment is None else environment
-    return (env.get("AWVOICE_DESK_URL") or DEFAULT_DESK_URL).rstrip("/")
+    explicit = (env.get("AWVOICE_DESK_URL") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    try:
+        from lib.core.desk_bridge import bridge_url
+        return bridge_url()
+    except Exception:  # noqa: BLE001 -- standalone install without the monorepo
+        return DEFAULT_DESK_URL
 
 
 def speak_payload(text: str, voice: str | None = None,
