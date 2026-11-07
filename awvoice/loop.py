@@ -38,12 +38,13 @@ import os
 import ssl
 import struct
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import wave
-from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Protocol, Sequence
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Iterable, List, Optional, Protocol, Sequence
 
 SAMPLE_RATE = 16000          # the rate every Whisper-family server expects
 SAMPLE_WIDTH = 2             # 16-bit signed little-endian
@@ -109,11 +110,16 @@ class VoiceTurn:
     audio: bytes = b""
     audio_format: str = ""
     user: str = ""
+    #: True when the listener spoke over the answer and the rest was dropped.
+    barged_in: bool = False
+    #: stt_ms / think_ms (to the first sentence) / tts_ms (summed) / sentences.
+    timings: Dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {"transcript": self.transcript, "reply": self.reply,
                 "audio_format": self.audio_format, "audio_bytes": len(self.audio),
-                "user": self.user}
+                "user": self.user, "barged_in": self.barged_in,
+                "timings": dict(self.timings)}
 
 
 @dataclass
@@ -248,6 +254,107 @@ class SpeechSegmenter:
 
 
 # ---------------------------------------------------------------------------
+# Streaming helpers: sentence cuts and barge-in
+# ---------------------------------------------------------------------------
+
+_SENTENCE_END = ".!?"
+_CLOSERS = "\"')]"
+
+
+class SentenceChunker:
+    """Cut a stream of text deltas into speakable sentences, in order.
+
+    A cut is made after ``.``, ``!`` or ``?`` (and any closing quote/bracket)
+    followed by whitespace, so ``3.5`` and ``example.com`` stay whole.  A run with no
+    sentence end is cut at the last space before ``max_chars`` so one long clause
+    cannot hold the first audio back.  ``flush`` returns whatever is left.
+    """
+
+    def __init__(self, max_chars: int = 200) -> None:
+        self.max_chars = max(20, int(max_chars))
+        self._buf = ""
+
+    def feed(self, piece: str) -> List[str]:
+        self._buf += piece or ""
+        out: List[str] = []
+        while True:
+            cut = self._cut()
+            if cut <= 0:
+                break
+            sentence, self._buf = self._buf[:cut].strip(), self._buf[cut:]
+            if sentence:
+                out.append(sentence)
+        return out
+
+    def flush(self) -> List[str]:
+        rest, self._buf = self._buf.strip(), ""
+        return [rest] if rest else []
+
+    def _cut(self) -> int:
+        buf = self._buf
+        limit = min(len(buf), self.max_chars + 1)
+        i = 0
+        while i < limit:
+            if buf[i] in _SENTENCE_END:
+                j = i + 1
+                while j < len(buf) and (buf[j] in _SENTENCE_END or buf[j] in _CLOSERS):
+                    j += 1
+                if j < len(buf) and buf[j].isspace():
+                    return j
+                i = j
+                continue
+            i += 1
+        if len(buf) > self.max_chars:
+            space = buf.rfind(" ", 0, self.max_chars)
+            return space if space > 0 else self.max_chars
+        return 0
+
+
+def split_sentences(text: str, max_chars: int = 200) -> List[str]:
+    """A whole reply as the sentences ``SentenceChunker`` would have cut."""
+    chunker = SentenceChunker(max_chars)
+    return chunker.feed(text or "") + chunker.flush()
+
+
+class BargeInDetector:
+    """Speech over the agent's answer: ``min_ms`` of consecutive voiced audio.
+
+    ``feed`` takes 16-bit mono PCM at ``sample_rate`` and returns True once per
+    burst, when the run of frames at or above ``speech_rms`` reaches ``min_ms``.
+    A quiet frame resets the run, so a cough or a click does not stop the answer.
+    """
+
+    def __init__(self, speech_rms: float = 480.0, min_ms: int = 250,
+                 sample_rate: int = SAMPLE_RATE, frame_ms: int = 20) -> None:
+        self.speech_rms = float(speech_rms)
+        self.min_ms = max(1, int(min_ms))
+        self._frame_bytes = int(sample_rate * SAMPLE_WIDTH * frame_ms / 1000)
+        self._frame_ms = frame_ms
+        self._pending = b""
+        self._voiced_ms = 0
+
+    def reset(self) -> None:
+        self._pending = b""
+        self._voiced_ms = 0
+
+    def feed(self, pcm: bytes) -> bool:
+        data = self._pending + (pcm or b"")
+        size = self._frame_bytes
+        fired = False
+        while len(data) >= size:
+            frame, data = data[:size], data[size:]
+            if pcm_rms(frame) >= self.speech_rms:
+                self._voiced_ms += self._frame_ms
+                if self._voiced_ms >= self.min_ms:
+                    fired = True
+                    self._voiced_ms = 0
+            else:
+                self._voiced_ms = 0
+        self._pending = data
+        return fired
+
+
+# ---------------------------------------------------------------------------
 # The loop
 # ---------------------------------------------------------------------------
 
@@ -315,6 +422,81 @@ class VoiceLoop:
         self._remember("user", text)
         self._remember("assistant", reply)
         return turn
+
+    def handle_utterance_stream(self, pcm: bytes, *, emit, cancel=None,
+                                max_chars: int = 200) -> Optional[VoiceTurn]:
+        """``handle_utterance`` delivered sentence by sentence (see ``answer_stream``)."""
+        started = time.monotonic()
+        text = (self.transcriber.transcribe(pcm, sample_rate=self.config.sample_rate)
+                or "").strip()
+        stt_ms = int((time.monotonic() - started) * 1000)
+        if not text:
+            return None
+        turn = self.answer_stream(text, emit=emit, cancel=cancel, max_chars=max_chars)
+        turn.timings["stt_ms"] = stt_ms
+        return turn
+
+    def answer_stream(self, text: str, *, emit, cancel=None,
+                      max_chars: int = 200) -> VoiceTurn:
+        """A question -> sentences, each synthesized and handed to ``emit`` as it lands.
+
+        ``emit(sentence, audio, audio_format)`` queues one clip for playback; it may
+        return False to stop the turn (the listener barged in).  A thinker with
+        ``think_stream(text, history=..., cancel=...)`` is read incrementally, so the
+        first sentence is speaking while the model is still writing the rest; any
+        other thinker's whole reply is cut into sentences, which still overlaps TTS
+        with playback.  ``cancel`` (a ``threading.Event``) stops the turn between
+        sentences.  History records every sentence the agent produced, joined.
+        """
+        history = list(self.history)
+        started = time.monotonic()
+        stream = getattr(self.thinker, "think_stream", None)
+        sentences: Iterable[str]
+        if callable(stream):
+            sentences = stream(text, history=history, cancel=cancel)
+        else:
+            sentences = split_sentences(
+                self.thinker.think(text, history=history) or "", max_chars)
+        produced: List[str] = []
+        timings: Dict[str, int] = {"tts_ms": 0}
+        barged = False
+        fmt_seen = ""
+        try:
+            for sentence in sentences:
+                sentence = (sentence or "").strip()
+                if not sentence:
+                    continue
+                if "think_ms" not in timings:
+                    timings["think_ms"] = int((time.monotonic() - started) * 1000)
+                if cancel is not None and cancel.is_set():
+                    barged = True
+                    break
+                produced.append(sentence)
+                t0 = time.monotonic()
+                audio, fmt = self.speaker.speak(sentence)
+                timings["tts_ms"] += int((time.monotonic() - t0) * 1000)
+                fmt_seen = fmt or fmt_seen
+                if cancel is not None and cancel.is_set():
+                    barged = True
+                    break
+                if emit(sentence, audio or b"", fmt or "") is False:
+                    barged = True
+                    break
+        finally:
+            close = getattr(sentences, "close", None)
+            if callable(close):
+                close()                 # stops the model stream on a barge-in
+        timings["think_total_ms"] = int((time.monotonic() - started) * 1000)
+        timings["sentences"] = len(produced)
+        reply = " ".join(produced)
+        if not reply and not barged:
+            raise RuntimeError("the agent answered nothing")
+        if reply:
+            self._remember("user", text)
+            self._remember("assistant", reply)
+        return VoiceTurn(transcript=text, reply=reply, audio=b"",
+                         audio_format=fmt_seen, user=self.user, barged_in=barged,
+                         timings=timings)
 
     def say(self, text: str) -> VoiceTurn:
         """Speak a line with no question (a greeting, a status)."""
