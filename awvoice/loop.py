@@ -223,6 +223,21 @@ class SpeechSegmenter:
             return self._finish()
         return None
 
+    def flush(self) -> Optional[bytes]:
+        """Close the utterance in progress when the stream stops without trailing silence.
+
+        The energy end-pointer closes an utterance only after ``silence_ms`` of quiet
+        frames. Discord stops SENDING packets the moment a speaker goes quiet, so the
+        silence the end-pointer waits for never arrives and a short question is held
+        forever (2026-11-06: 28 decoded frames, 0 utterances, Aither never answered).
+        The transport calls this when it knows the speaker stopped; it returns the
+        utterance if one was in progress and long enough, and resets either way.
+        """
+        if not self._active:
+            self.reset()
+            return None
+        return self._finish()
+
     def _finish(self) -> Optional[bytes]:
         frames = list(self._frames)          # reset() clears the live list
         speech_frames = self._speech_frames
