@@ -259,6 +259,25 @@ class SpeechSegmenter:
 
 _SENTENCE_END = ".!?"
 _CLOSERS = "\"')]"
+_CLAUSE_END = ",;:"
+
+#: What Whisper writes over silence, noise or music, never what someone said. A short
+#: utterance that transcribes to exactly one of these is dropped, not answered
+#: (2026-11-07: a tone test came back "Thank you."; background music became "turns").
+WHISPER_PHANTOMS = frozenset({
+    "thank you", "thank you very much", "thanks for watching", "thank you for watching",
+    "please subscribe", "subscribe", "you", "bye", "bye bye", "so", "uh", "um", "hmm",
+    "subtitles by the amaraorg community",
+})
+#: Only an utterance this short (seconds) can be a phantom.
+PHANTOM_MAX_S = 2.0
+
+
+def is_phantom(text: str, seconds: float) -> bool:
+    """True when ``text`` is Whisper's filler for a ``seconds``-long clip, not speech."""
+    norm = " ".join("".join(ch for ch in (text or "").lower()
+                            if ch.isalpha() or ch in " '").split())
+    return seconds <= PHANTOM_MAX_S and norm in WHISPER_PHANTOMS
 
 
 class SentenceChunker:
@@ -270,8 +289,12 @@ class SentenceChunker:
     cannot hold the first audio back.  ``flush`` returns whatever is left.
     """
 
-    def __init__(self, max_chars: int = 200) -> None:
+    def __init__(self, max_chars: int = 200, first_clause_chars: int = 0) -> None:
         self.max_chars = max(20, int(max_chars))
+        # The FIRST chunk may also end at a clause mark (, ; :) once it is this long,
+        # so the reply starts speaking before its first full stop. 0 = off.
+        self.first_clause_chars = max(0, int(first_clause_chars or 0))
+        self._first = True
         self._buf = ""
 
     def feed(self, piece: str) -> List[str]:
@@ -284,6 +307,7 @@ class SentenceChunker:
             sentence, self._buf = self._buf[:cut].strip(), self._buf[cut:]
             if sentence:
                 out.append(sentence)
+                self._first = False
         return out
 
     def flush(self) -> List[str]:
@@ -294,7 +318,11 @@ class SentenceChunker:
         buf = self._buf
         limit = min(len(buf), self.max_chars + 1)
         i = 0
+        early = self.first_clause_chars if self._first else 0
         while i < limit:
+            if (early and buf[i] in _CLAUSE_END and i + 1 >= early
+                    and i + 1 < len(buf) and buf[i + 1].isspace()):
+                return i + 1
             if buf[i] in _SENTENCE_END:
                 j = i + 1
                 while j < len(buf) and (buf[j] in _SENTENCE_END or buf[j] in _CLOSERS):
@@ -406,9 +434,16 @@ class VoiceLoop:
         """One complete utterance -> a spoken reply (or None when no words)."""
         text = (self.transcriber.transcribe(pcm, sample_rate=self.config.sample_rate)
                 or "").strip()
-        if not text:
+        if not text or self._phantom(text, pcm):
             return None                       # a cough; never ask the model about it
         return self.answer(text)
+
+    def _phantom(self, text: str, pcm: bytes) -> bool:
+        seconds = len(pcm) / float(2 * max(1, int(self.config.sample_rate)))
+        if is_phantom(text, seconds):
+            self.phantoms = getattr(self, "phantoms", 0) + 1
+            return True
+        return False
 
     def answer(self, text: str) -> VoiceTurn:
         """A known question -> a spoken reply.  Bypasses STT (typed input, a test)."""
@@ -430,7 +465,7 @@ class VoiceLoop:
         text = (self.transcriber.transcribe(pcm, sample_rate=self.config.sample_rate)
                 or "").strip()
         stt_ms = int((time.monotonic() - started) * 1000)
-        if not text:
+        if not text or self._phantom(text, pcm):
             return None
         turn = self.answer_stream(text, emit=emit, cancel=cancel, max_chars=max_chars)
         turn.timings["stt_ms"] = stt_ms
