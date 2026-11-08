@@ -278,9 +278,15 @@ class TestDeskSay:
             speak_payload("   ")
 
     def test_desk_url_env_override(self):
+        from unittest import mock
+
+        from awvoice import desk
         from awvoice.desk import DEFAULT_DESK_URL, desk_url
 
-        assert desk_url({}) == DEFAULT_DESK_URL
+        # Hermetic: a box with the host desk-bridge module importable would
+        # answer its persisted port instead of the constant.
+        with mock.patch.object(desk, "DESK_BRIDGE_MODULE", "awvoice._no_such_module"):
+            assert desk_url({}) == DEFAULT_DESK_URL
         assert desk_url({"AWVOICE_DESK_URL": "http://127.0.0.1:5/"}) == "http://127.0.0.1:5"
 
     def test_say_posts_to_speak_and_returns_verdict(self):

@@ -12,6 +12,7 @@ The bridge is loopback-only; ``AWVOICE_DESK_URL`` overrides the default
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import urllib.error
@@ -19,6 +20,9 @@ import urllib.request
 
 DEFAULT_DESK_URL = "http://127.0.0.1:47931"
 MAX_CHARS = 2000
+#: Host module exposing ``bridge_url()`` (the launcher's persisted port).
+#: Not a dependency of this package.
+DESK_BRIDGE_MODULE = "lib.core.desk_bridge"
 
 
 class DeskUnavailableError(RuntimeError):
@@ -30,16 +34,17 @@ def desk_url(environment: dict[str, str] | None = None) -> str:
 
     The launcher picks a bindable port because Windows' reserved TCP ranges move
     across reboots (2026-11-03: the pinned 47931 landed inside one and the desk
-    came up with a dead bridge). See AitherOS/lib/core/desk_bridge.py.
+    came up with a dead bridge). The host's desk-bridge module reads that port.
     """
     env = os.environ if environment is None else environment
     explicit = (env.get("AWVOICE_DESK_URL") or "").strip()
     if explicit:
         return explicit.rstrip("/")
+    # The persisted-port reader is an OPTIONAL host integration, resolved by
+    # name at call time: absent on a standalone install, unchanged where present.
     try:
-        from lib.core.desk_bridge import bridge_url
-        return bridge_url()
-    except Exception:  # noqa: BLE001 -- standalone install without the monorepo
+        return importlib.import_module(DESK_BRIDGE_MODULE).bridge_url()
+    except Exception:  # noqa: BLE001 -- standalone install without the host module
         return DEFAULT_DESK_URL
 
 
