@@ -13,7 +13,6 @@ pip install awvoice
 ## In Claude Code
 
 - hook: `awvoice reply` (on Stop)
-- skill: `/awvoice`
 
 ## Use it in 30 seconds
 
