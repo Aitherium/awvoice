@@ -36,7 +36,7 @@ ENGINES = ("piper", "chatterbox", "kokoro")
 #: "the config is missing". Every use is LOGGED by the caller. Kept equal to the shipped
 #: map by ``test_agent_voices.py::test_last_known_good_matches_the_shipped_map``.
 LAST_KNOWN_GOOD = {
-    "aither": "local:piper",
+    "aither": "chatterbox:aither",
     "atlas": "chatterbox:atlas",
     "demiurge": "chatterbox:demiurge",
     "hera": "chatterbox:hera",
